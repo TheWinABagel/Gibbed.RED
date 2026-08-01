@@ -1,21 +1,21 @@
 ﻿/* Copyright (c) 2011 Rick (rick 'at' gibbed 'dot' us)
- * 
+ *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
  * arising from the use of this software.
- * 
+ *
  * Permission is granted to anyone to use this software for any purpose,
  * including commercial applications, and to alter it and redistribute it
  * freely, subject to the following restrictions:
- * 
+ *
  * 1. The origin of this software must not be misrepresented; you must not
  *    claim that you wrote the original software. If you use this software
  *    in a product, an acknowledgment in the product documentation would
  *    be appreciated but is not required.
- * 
+ *
  * 2. Altered source versions must be plainly marked as such, and must not
  *    be misrepresented as being the original software.
- * 
+ *
  * 3. This notice may not be removed or altered from any source
  *    distribution.
  */
@@ -33,8 +33,23 @@ namespace Gibbed.RED.FileFormats
     {
         public uint Version;
         public uint EncryptionKey = 0;
+
+        public uint StringsHash;
+        public uint ComputedStringsHash;
+
+        public bool HasStringsHash
+        {
+            get { return this.Version >= 114; }
+        }
+
+        public bool StringsHashIsCorrect
+        {
+            get { return this.StringsHash == this.ComputedStringsHash; }
+        }
+
         public Dictionary<string, uint> Keys
             = new Dictionary<string, uint>();
+
         public Dictionary<uint, string> Texts
             = new Dictionary<uint, string>();
 
@@ -61,7 +76,7 @@ namespace Gibbed.RED.FileFormats
                 output.WriteValueU16((ushort)((this.EncryptionKey >> 0) & 0xFFFF));
             }
 
-            uint fileStringsHash = 0;
+            uint stringsHash = 0;
 
             var hashPosition = output.Position;
             if (this.Version >= 200)
@@ -89,46 +104,50 @@ namespace Gibbed.RED.FileFormats
                     buffer = Encoding.Unicode.GetBytes(kv.Value);
                 }
                 */
-                
+
                 var buffer = Encoding.Unicode.GetBytes(kv.Value);
 
-                ushort stringKey = (ushort)(magic >> 8);
+                if (magic != 0)
+                {
+                    var stringKey = (ushort)(magic >> 8);
+                    for (int j = 0; j < buffer.Length; j += 2)
+                    {
+                        if (this.Version >= 200)
+                        {
+                            var charKey = (ushort)(((buffer.Length / 2) + 1) * stringKey);
+                            buffer[j + 0] ^= (byte)((charKey >> 0) & 0xFF);
+                            buffer[j + 1] ^= (byte)((charKey >> 8) & 0xFF);
+                            stringKey = stringKey.RotateLeft(1);
+                        }
+                        else
+                        {
+                            buffer[j + 0] ^= (byte)((stringKey >> 0) & 0xFF);
+                            buffer[j + 1] ^= (byte)((stringKey >> 8) & 0xFF);
+                            stringKey++;
+                        }
+                    }
+                }
 
                 for (int j = 0; j < buffer.Length; j += 2)
                 {
-                    if (this.Version >= 200)
-                    {
-                        var charKey = (ushort)(((buffer.Length / 2) + 1) * stringKey);
-                        buffer[j + 0] ^= (byte)((charKey >> 0) & 0xFF);
-                        buffer[j + 1] ^= (byte)((charKey >> 8) & 0xFF);
-                        stringKey = stringKey.RotateLeft(1);
-                    }
-                    else
-                    {
-                        throw new NotImplementedException("string obfuscation for old strings files is untested");
-
-                        // untested
-                        buffer[j + 0] ^= (byte)((stringKey >> 0) & 0xFF);
-                        buffer[j + 1] ^= (byte)((stringKey >> 8) & 0xFF);
-                        stringKey++;
-                    }
-
-                    fileStringsHash += BitConverter.ToUInt16(buffer, j);
+                    stringsHash += BitConverter.ToUInt16(buffer, j);
                 }
 
                 output.WriteEncodedStringBuffer(buffer);
             }
 
+            this.StringsHash = this.ComputedStringsHash = stringsHash;
+
             if (this.Version >= 200)
             {
                 var endPosition = output.Position;
                 output.Seek(hashPosition, SeekOrigin.Begin);
-                output.WriteValueU32(fileStringsHash ^ magic);
+                output.WriteValueU32(stringsHash ^ magic);
                 output.Seek(endPosition, SeekOrigin.Begin);
             }
             else if (this.Version >= 114)
             {
-                output.WriteValueU32(fileStringsHash);
+                output.WriteValueU32(stringsHash);
             }
         }
 
@@ -171,7 +190,7 @@ namespace Gibbed.RED.FileFormats
                 this.Keys[key] ^= magic;
             }
 
-            uint actualStringsHash = 0;
+            uint computedStringsHash = 0;
             var stringCount = input.ReadValueEncodedS32();
             for (int i = 0; i < stringCount; i++)
             {
@@ -180,33 +199,38 @@ namespace Gibbed.RED.FileFormats
 
                 var buffer = input.ReadEncodedStringBuffer();
 
-                ushort stringKey = (ushort)(magic >> 8);
-
                 uint hash = 0;
 
                 for (int j = 0; j < buffer.Length; j += 2)
                 {
                     hash += BitConverter.ToUInt16(buffer, j);
+                }
 
-                    if (this.Version >= 200)
-                    {
-                        var charKey = (ushort)(((buffer.Length / 2) + 1) * stringKey);
-                        buffer[j + 0] ^= (byte)((charKey >> 0) & 0xFF);
-                        buffer[j + 1] ^= (byte)((charKey >> 8) & 0xFF);
-                        stringKey = stringKey.RotateLeft(1);
-                    }
-                    else
-                    {
-                        throw new NotImplementedException("string obfuscation for old strings files is untested");
+                computedStringsHash += hash;
 
-                        // untested
-                        buffer[j + 0] ^= (byte)((stringKey >> 0) & 0xFF);
-                        buffer[j + 1] ^= (byte)((stringKey >> 8) & 0xFF);
-                        stringKey++;
+                if (magic != 0)
+                {
+                    var stringKey = (ushort)(magic >> 8);
+
+                    for (int j = 0; j < buffer.Length; j += 2)
+                    {
+                        if (this.Version >= 200)
+                        {
+                            var charKey = (ushort)(((buffer.Length / 2) + 1) * stringKey);
+                            buffer[j + 0] ^= (byte)((charKey >> 0) & 0xFF);
+                            buffer[j + 1] ^= (byte)((charKey >> 8) & 0xFF);
+                            stringKey = stringKey.RotateLeft(1);
+                        }
+                        else
+                        {
+                            buffer[j + 0] ^= (byte)((stringKey >> 0) & 0xFF);
+                            buffer[j + 1] ^= (byte)((stringKey >> 8) & 0xFF);
+                            stringKey++;
+                        }
                     }
                 }
 
-                actualStringsHash += hash;
+                computedStringsHash += hash;
 
                 if (index == 65434 &&
                     hash == 83394453)
@@ -225,7 +249,7 @@ namespace Gibbed.RED.FileFormats
                 fileStringsHash = input.ReadValueU32();
             }
 
-            if (this.Version >= 114 && fileStringsHash != actualStringsHash)
+            if (this.Version >= 114 && fileStringsHash != computedStringsHash)
             {
                 throw new FormatException("hash for strings does not match");
             }
@@ -235,7 +259,7 @@ namespace Gibbed.RED.FileFormats
         {
             /* Thanks to hhrhhr for making it obvious that the
              * keys were tied to specific language files.
-             * 
+             *
              * I hadn't noticed that for some reason. :)
              */
 
@@ -255,7 +279,7 @@ namespace Gibbed.RED.FileFormats
                 case 0x83496237: return 0x73946816; // PL
             }
 
-            return 0;
+            throw new NotSupportedException("Unknown file key " + fileKey);
         }
     }
 }

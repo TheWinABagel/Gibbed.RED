@@ -41,6 +41,7 @@ namespace Gibbed.RED.Strings
         {
             var mode = Mode.Unknown;
             bool showHelp = false;
+            bool force = false;
             bool overwriteFiles = false;
 
             OptionSet options = new OptionSet()
@@ -49,6 +50,11 @@ namespace Gibbed.RED.Strings
                     "d|decode",
                     "decode strings file", 
                     v => mode = v != null ? Mode.Decode : mode
+                },
+                {
+                    "f|force",
+                    "force decode strings file even when strings hash is not correct",
+                    v => force = v != null
                 },
                 {
                     "e|encode",
@@ -97,6 +103,22 @@ namespace Gibbed.RED.Strings
                 {
                     var strings = new StringsFile();
                     strings.Deserialize(input);
+
+                    if (strings.HasStringsHash == true &&
+                        strings.StringsHashIsCorrect == false)
+                    {
+                        if (force == false)
+                        {
+                            Console.WriteLine("Error: strings hash mismatch! ({0} vs {1})",
+                                strings.StringsHash,
+                                strings.ComputedStringsHash);
+                            return;
+                        }
+
+                        Console.WriteLine("Warning: strings hash mismatch! ({0} vs {1})",
+                            strings.StringsHash,
+                            strings.ComputedStringsHash);
+                    }
 
                     var settings = new XmlWriterSettings()
                     {
