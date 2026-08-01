@@ -33,7 +33,7 @@ namespace Gibbed.RED.Unpack
     {
         private static string GetExecutableName()
         {
-            return Path.GetFileName(System.Reflection.Assembly.GetExecutingAssembly().CodeBase);
+            return AppDomain.CurrentDomain.FriendlyName;
         }
 
         public static void Main(string[] args)
@@ -114,7 +114,10 @@ namespace Gibbed.RED.Unpack
                 {
                     current++;
                     var entryPath = Path.Combine(outputPath, entry.Name);
-
+                    if (!OperatingSystem.IsWindows())
+                    {
+                        entryPath = entryPath.Replace("\\", "/");
+                    }
                     if (overwriteFiles == false &&
                         File.Exists(entryPath) == true)
                     {
@@ -128,7 +131,7 @@ namespace Gibbed.RED.Unpack
                     }
 
                     Console.WriteLine("[{0}/{1}] {2}",
-                        current, total, entry.Name);
+                        current, total, entryPath);
 
                     if (list) continue;
 

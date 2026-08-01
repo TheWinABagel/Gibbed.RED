@@ -1,21 +1,21 @@
 ﻿/* Copyright (c) 2011 Rick (rick 'at' gibbed 'dot' us)
- * 
+ *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
  * arising from the use of this software.
- * 
+ *
  * Permission is granted to anyone to use this software for any purpose,
  * including commercial applications, and to alter it and redistribute it
  * freely, subject to the following restrictions:
- * 
+ *
  * 1. The origin of this software must not be misrepresented; you must not
  *    claim that you wrote the original software. If you use this software
  *    in a product, an acknowledgment in the product documentation would
  *    be appreciated but is not required.
- * 
+ *
  * 2. Altered source versions must be plainly marked as such, and must not
  *    be misrepresented as being the original software.
- * 
+ *
  * 3. This notice may not be removed or altered from any source
  *    distribution.
  */
@@ -29,7 +29,8 @@ namespace Gibbed.RED.FileFormats
 {
     internal static class StreamHelpers
     {
-        private static Encoding WindowsEncoding = Encoding.GetEncoding(1252);
+        private static Encoding LinuxEncoding = Encoding.UTF8;
+        // private static Encoding WindowsEncoding = Encoding.GetEncoding(1252);
 
         public static int ReadValueEncodedS32(this Stream stream)
         {
@@ -51,8 +52,7 @@ namespace Gibbed.RED.FileFormats
                     extra = stream.ReadValueU8();
                     value |= (uint)(extra & 0x7F) << shift;
                     shift += 7;
-                }
-                while ((extra & 0x80) != 0);
+                } while ((extra & 0x80) != 0);
             }
 
             if ((op & 0x80) != 0)
@@ -93,9 +93,9 @@ namespace Gibbed.RED.FileFormats
                     {
                         extra |= 0x80;
                     }
+
                     stream.WriteValueU8(extra);
-                }
-                while (value > 0);
+                } while (value > 0);
             }
         }
 
@@ -108,7 +108,7 @@ namespace Gibbed.RED.FileFormats
                 throw new InvalidOperationException();
             }
 
-            return stream.ReadString(length, true, WindowsEncoding);
+            return stream.ReadString(length, true, LinuxEncoding);
         }
 
         public static string ReadEncodedString(this Stream stream)
@@ -123,7 +123,7 @@ namespace Gibbed.RED.FileFormats
                     throw new InvalidOperationException();
                 }
 
-                return stream.ReadString(length, true, WindowsEncoding);
+                return stream.ReadString(length, true, LinuxEncoding);
             }
             else
             {
@@ -153,7 +153,7 @@ namespace Gibbed.RED.FileFormats
                 value = value.Replace("…", "...");
 
                 stream.WriteValueEncodedS32(-value.Length);
-                stream.WriteString(value, WindowsEncoding);
+                stream.WriteString(value, LinuxEncoding);
             }
             else
             {
@@ -168,7 +168,6 @@ namespace Gibbed.RED.FileFormats
 
             if (length < 0)
             {
-
                 length = -length;
                 if (length >= 0x10000)
                 {
