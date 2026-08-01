@@ -291,6 +291,7 @@ namespace Gibbed.Squish
 			m_header = new DdsHeader();
 		}
 
+        /*
         public Image Image()
         {
             return this.Image(true, true, true, false);
@@ -349,7 +350,7 @@ namespace Gibbed.Squish
             }
 
             return bitmap;
-        }
+        }*/
 
 		public void Load(System.IO.Stream input)
 		{

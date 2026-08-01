@@ -3,7 +3,9 @@
   <Project Path="Gibbed.RED.Diff/Gibbed.RED.Diff.csproj" />
   <Project Path="Gibbed.RED.FileFormats/Gibbed.RED.FileFormats.csproj" />
   <Project Path="Gibbed.RED.Pack/Gibbed.RED.Pack.csproj" />
-  <Project Path="Gibbed.RED.ResourceEdit/Gibbed.RED.ResourceEdit.csproj" />
+  <Project Path="Gibbed.RED.ResourceEdit/Gibbed.RED.ResourceEdit.csproj">
+    <Deploy Solution="Release|*" />
+  </Project>
   <Project Path="Gibbed.RED.ScriptDecompiler/Gibbed.RED.ScriptDecompiler.csproj" />
   <Project Path="Gibbed.RED.Strings/Gibbed.RED.Strings.csproj" />
   <Project Path="Gibbed.RED.Test/Gibbed.RED.Test.csproj" />
