@@ -27,152 +27,153 @@ using Gibbed.Helpers;
 using Gibbed.RED.FileFormats;
 using NDesk.Options;
 
-namespace Gibbed.RED.Unpack
+namespace Gibbed.RED.Unpack;
+
+internal static class Program
 {
-    internal class Program
+    private static string GetExecutableName()
     {
-        private static string GetExecutableName()
+        return AppDomain.CurrentDomain.FriendlyName;
+    }
+
+    public static void Main(string[] args)
+    {
+        bool showHelp = false;
+        bool overwriteFiles = false;
+        bool list = false;
+        string cdkey = null;
+        string extensionFilter = null;
+
+        var options = new OptionSet
         {
-            return AppDomain.CurrentDomain.FriendlyName;
+            {
+                "o|overwrite",
+                "overwrite existing files",
+                v => overwriteFiles = v != null
+            },
+            {
+                "cdkey=",
+                "cdkey for use with DLC archives\n(in format #####-#####-#####-#####)",
+                v => cdkey = v
+            },
+            {
+                "e|extension=",
+                "only extract files of this extension",
+                v => extensionFilter = v
+            },
+            {
+                "h|help",
+                "show this message and exit", 
+                v => showHelp = v != null
+            }, 
+            {
+                "l|list",
+                "print a list of archive contents, don't unpack anything",
+                v => list = v != null
+            }
+        };
+
+        List<string> extras;
+
+        try
+        {
+            extras = options.Parse(args);
+        }
+        catch (OptionException e)
+        {
+            Console.Write("{0}: ", GetExecutableName());
+            Console.WriteLine(e.Message);
+            Console.WriteLine("Try `{0} --help' for more information.", GetExecutableName());
+            return;
         }
 
-        public static void Main(string[] args)
+        if (extras.Count < 1 || extras.Count > 2 || showHelp)
         {
-            bool showHelp = false;
-            bool overwriteFiles = false;
-            bool list = false;
-            string cdkey = null;
-            string extensionFilter = null;
+            Console.WriteLine("Usage: {0} [OPTIONS]+ input_dzip [output_dir]", GetExecutableName());
+            Console.WriteLine();
+            Console.WriteLine("Options:");
+            options.WriteOptionDescriptions(Console.Out);
+            return;
+        }
 
-            OptionSet options = new OptionSet()
+        string inputPath = extras[0];
+        string outputPath = extras.Count > 1 ? extras[1] : Path.ChangeExtension(inputPath, null);
+
+        var uncompressed = new byte[0x10000];
+        bool filtering = string.IsNullOrEmpty(extensionFilter) == false;
+
+        using FileStream input = File.Open(inputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var pkg = new PackageFile();
+        pkg.DeserializeWithCDKey(input, cdkey);
+
+        long current = 0;
+        long total = pkg.Entries.Count;
+
+        foreach (var entry in pkg.Entries)
+        {
+            current++;
+            var entryPath = Path.Combine(outputPath, entry.Name);
+            if (!OperatingSystem.IsWindows())
             {
-                {
-                    "o|overwrite",
-                    "overwrite existing files",
-                    v => overwriteFiles = v != null
-                },
-                {
-                    "cdkey=",
-                    "cdkey for use with DLC archives\n(in format #####-#####-#####-#####)",
-                    v => cdkey = v
-                },
-                {
-                    "e|extension=",
-                    "only extract files of this extension",
-                    v => extensionFilter = v
-                },
-                {
-                    "h|help",
-                    "show this message and exit", 
-                    v => showHelp = v != null
-                }, 
-                {
-                    "l|list",
-                    "print a list of archive contents, don't unpack anything",
-                    v => list = v != null
-                }
-            };
-
-            List<string> extras;
-
-            try
-            {
-                extras = options.Parse(args);
+                entryPath = entryPath.Replace("\\", "/");
             }
-            catch (OptionException e)
+            if (overwriteFiles == false &&
+                File.Exists(entryPath))
             {
-                Console.Write("{0}: ", GetExecutableName());
-                Console.WriteLine(e.Message);
-                Console.WriteLine("Try `{0} --help' for more information.", GetExecutableName());
-                return;
+                continue;
             }
 
-            if (extras.Count < 1 || extras.Count > 2 || showHelp == true)
+            if (filtering &&
+                Path.GetExtension(entryPath) != extensionFilter)
             {
-                Console.WriteLine("Usage: {0} [OPTIONS]+ input_dzip [output_dir]", GetExecutableName());
-                Console.WriteLine();
-                Console.WriteLine("Options:");
-                options.WriteOptionDescriptions(Console.Out);
-                return;
+                continue;
             }
 
-            string inputPath = extras[0];
-            string outputPath = extras.Count > 1 ? extras[1] : Path.ChangeExtension(inputPath, null);
+            Console.WriteLine("[{0}/{1}] {2}",
+                current, total, entryPath);
 
-            var uncompressed = new byte[0x10000];
-            bool filtering = string.IsNullOrEmpty(extensionFilter) == false;
+            if (list) continue;
 
-            using (var input = File.Open(inputPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            var parent = Path.GetDirectoryName(entryPath);
+            if (parent != null)
             {
-                var pkg = new PackageFile();
-                pkg.DeserializeWithCDKey(input, cdkey);
+                Directory.CreateDirectory(parent);
+            }
 
-                long current = 0;
-                long total = pkg.Entries.Count;
+            input.Seek(entry.Offset, SeekOrigin.Begin);
 
-                foreach (var entry in pkg.Entries)
+            int blocks = (int)((entry.UncompressedSize + 0xFFFF) >> 16); // .Align(0x10000) / 0x10000;
+
+            var offsets = new long[blocks + 1];
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                offsets[i] = entry.Offset + input.ReadValueU32();
+            }
+            offsets[blocks] = entry.Offset + entry.CompressedSize;
+
+            using (var output = File.Create(entryPath))
+            {
+                long left = entry.UncompressedSize;
+
+                for (int i = 0; i < blocks; i++)
                 {
-                    current++;
-                    var entryPath = Path.Combine(outputPath, entry.Name);
-                    if (!OperatingSystem.IsWindows())
-                    {
-                        entryPath = entryPath.Replace("\\", "/");
-                    }
-                    if (overwriteFiles == false &&
-                        File.Exists(entryPath) == true)
-                    {
-                        continue;
-                    }
+                    var compressed = new byte[offsets[i + 1] - offsets[i + 0]];
+                    input.Seek(offsets[i], SeekOrigin.Begin);
+                    input.ReadExactly(compressed, 0, compressed.Length);
 
-                    if (filtering == true &&
-                        Path.GetExtension(entryPath) != extensionFilter)
+                    int read = Lzf.Decompress(compressed, uncompressed);
+
+                    if (i + 1 < blocks && read != uncompressed.Length)
                     {
-                        continue;
+                        throw new InvalidOperationException();
                     }
 
-                    Console.WriteLine("[{0}/{1}] {2}",
-                        current, total, entryPath);
-
-                    if (list) continue;
-
-                    Directory.CreateDirectory(Path.GetDirectoryName(entryPath));
-
-                    input.Seek(entry.Offset, SeekOrigin.Begin);
-
-                    int blocks = (int)((entry.UncompressedSize + 0xFFFF) >> 16); // .Align(0x10000) / 0x10000;
-
-                    var offsets = new long[blocks + 1];
-                    for (int i = 0; i < offsets.Length; i++)
-                    {
-                        offsets[i] = entry.Offset + input.ReadValueU32();
-                    }
-                    offsets[blocks] = entry.Offset + entry.CompressedSize;
-
-                    using (var output = File.Create(entryPath))
-                    {
-                        long left = entry.UncompressedSize;
-
-                        for (int i = 0; i < blocks; i++)
-                        {
-                            var compressed = new byte[offsets[i + 1] - offsets[i + 0]];
-                            input.Seek(offsets[i], SeekOrigin.Begin);
-                            input.Read(compressed, 0, compressed.Length);
-
-                            int read = LZF.Decompress(compressed, uncompressed);
-
-                            if (i + 1 < blocks && read != uncompressed.Length)
-                            {
-                                throw new InvalidOperationException();
-                            }
-
-                            output.Write(uncompressed, 0, (int)Math.Min(left, read));
-                            left -= read;
-                        }
-                    }
-
-                    File.SetLastWriteTime(entryPath, entry.TimeStamp);
+                    output.Write(uncompressed, 0, (int)Math.Min(left, read));
+                    left -= read;
                 }
             }
+
+            File.SetLastWriteTime(entryPath, entry.TimeStamp);
         }
     }
 }
